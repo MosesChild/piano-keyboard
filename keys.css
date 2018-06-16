@@ -1,0 +1,31 @@
+body {
+    margin: 0 0;
+    padding: 0;
+}
+.keyboard {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 200px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+}
+.key {
+    position: absolute;
+}
+.key.pressed{
+    background-color: #AAAAAA;
+}
+.white {
+    background-color: white;
+    border: 1px solid black;
+    height: 100%;
+}
+.black {
+    height: 65%;
+    background-color: black;
+    border: 1px solid black;
+    z-index: 2
+};
