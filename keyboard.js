@@ -1,28 +1,6 @@
+import {startMidi, addMidi} from "../midi/midi.js";
+// needs to register 'receiveFunctions's to a global midi 'object', enabling as many functions as necessary...
 
-const midi={  //global midi 'object', enabling as many instances as necessary...
-    access: startMidi(),
-    inputRecipients: [], // an array of all object instances that need to receive midi events...
-    doMidiEvents (event){
-        if (midi.inputRecipients.length > 0){
-            console.log(midi.inputRecipient)
-            midi.inputRecipients.forEach( recipient => recipient.midiListener.call(recipient, event));
-        }
-    },
-    removeRecipient(instance){
-        midi.inputRecipients=midi.inputRecipients.filter( recipient => recipient != instance);
-    }
-};
-function startMidi(){ 
-    function onMIDIFailure(msg) {
-        console.log( "Failed to get MIDI access - " + msg );
-    }
-    function onMIDISuccess( midiAccess) {
-        console.log( "MIDI ready!");
-        midi.access=midiAccess;  // keep in object instance
-        midi.access.inputs.forEach( function(entry){entry.onmidimessage = midi.doMidiEvents;});
-    }
-    navigator.requestMIDIAccess().then( onMIDISuccess, onMIDIFailure );
-}
 const mapNotes= (container, noteStart=24) =>{
     const semiTones=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
     const keys=container.querySelectorAll('div');
@@ -54,110 +32,50 @@ const mapNotes= (container, noteStart=24) =>{
 function createUI(octaves, octaveStart){
     const keyboard=document.createElement("div");
     const noteStart = octaveStart ? octaveStart*12 : Math.floor((9-octaves)/2)*12;
-    keyboard.className="keyboard";
     for (let i=0; i<octaves*12+1; i++){
         keyboard.appendChild(document.createElement("div"));
     }
+    keyboard.className="keyboard";
     mapNotes(keyboard, noteStart);
     return keyboard;
 };
+
 function mouseDown(event){
     if (event.buttons & 1) {
         event.target.className+=" pressed";
-        console.log(event.target.dataset.midiNote)
-        this.sendMidi([0x90, event.target.dataset.midiNote, 0x7f]);    // note on, full velocity);
+        console.log("mouseDown",this, event.target.dataset.midiNote);
+        this.noteOnCallback(event.target.dataset.midiNote);
     }
 };
+
 function mouseUp(event){
     if (event.target.classList.contains("pressed")){
-    event.target.classList.remove("pressed");
-    this.sendMidi([0x80, event.target.dataset.midiNote, 0x7f]); // note off, full velocity);
-    }    
-};
-function keyboardMidiListener(event){
-    // Utilized by 'midi' object interface (doMidiEvents method.)    
-    // each keyboard instance has a 'midiListener' key that points to this function.
-    const channel = (event.data[0] & 0x0f)+1;
-    // lookback to correct keyboard...
-    if (this.channelIn==channel || !this.channelIn){
-        const midiType= event.data[0] & 0xf0;
-        const keyboard=this.UI;
-        const key=keyboard.querySelector(`[data-midi-note="${event.data[1]}"]`);
-        if (midiType===144){ 
-            key.classList.add("pressed");
-        } else if (midiType===128){
-            key.classList.remove("pressed");
-        };
-        if (this.loopback) this.sendMidi(event.data);
+        event.target.classList.remove("pressed");
+        this.noteOffCallback(event.target.dataset.midiNote);
     }
-}
+};
 
 const makeKeyboard = ({
     octaves = 4,
     octaveStart = null, // defaults to center keyboard in midi range at createUI(mapNotes)...
-    outputPortId = null, // defaults to first available port...
-    channelOut = 1,  
-    channelIn = null, // not wired... currently takes input on all ports and channels.
-    loopback = true, // keyboard midiIn goes into UI then loops back to "channelOut",
+    noteOnCallback=(event)=>console.log("set noteOnCallback to receive keyboard noteOn events. " + event),
+    noteOffCallback=(event)=>console.log("set noteOffCallback to receive keyboard noteOff events. " + event),
 } ={}) => ({
-    outputPortId,
-    channelOut,
-    channelIn,   
-    loopback,
-    midi: null,    
+    noteOnCallback,
+    noteOffCallback,   
     UI : createUI (octaves, octaveStart),
-    changeOutputPort(outputPortId){
-        console.log("changeOutputPort")
-        try {
-            this.output = midi.access.outputs.get(outputPort);
-            this.outputPortId = outputPort;
-        }
-        catch {
-            const portIDs=[];
-            for (let entry of midi.access.outputs){
-                portIDs.push(entry[1].id);
-            }
-            console.error("Null or invalid outputPortId selected." +
-            "Current available portIds are: \n" + portIDs +
-                    "\n Selecting " + portIDs[0] + " by default.\n")
-            midi.outputPortId = outputPortId;
-            this.output = midi.access.outputs.get(portIDs[0]);// shouldn't have to do every time!
-        }
-    },
-    sendMidi(event) {
-        const [route, ...rest]=event;
-        const outMessage = [(route & event[0] & 0xf0 )+ (this.channelOut - 1), ...rest];
-        console.log("sendmidi this", this ,outMessage, event)
-        try{
-            this.output.send( outMessage );
-        }
-        catch(error){
-            this.changeOutputPort();
-            this.output.send( outMessage );
-        }
-        
-    },
-    midiListener: keyboardMidiListener, //does not need 'bind'!!! This function gets called by 'midi' instance on input.
     init(){
         this.mouseDown=mouseDown.bind(this);
         this.mouseUp=mouseUp.bind(this);
-        midi.inputRecipients.push(this);
-        
-        console.log(midi)
         this.UI.onmouseover= this.UI.onmousedown = this.mouseDown;
         this.UI.onmouseout = this.UI.onmouseup = this.mouseUp;
     }
 });
 
-var keyboard1= makeKeyboard({octaves:6, channelOut: 2,});
-var keyboard2= makeKeyboard({octaves:4, channelIn: 2, channelOut: 1});
-keyboard1.init();
+var keyboard1= makeKeyboard({octaves:6, channelOut: 2});
+var keyboard2= makeKeyboard({octaves:4, channelOut: 2});
+var midiKeyboard1= addMidi({o: keyboard1 });
+midiKeyboard1.init();
 keyboard2.init();
-
-
-setTimeout(()=>{
-    keyboard2.changeOutputPort("ull");
-    console.log("attempted change", keyboard2)
-}, 300);
-document.body.appendChild(keyboard1.UI);
+document.body.appendChild(midiKeyboard1.UI);
 document.body.appendChild(keyboard2.UI);
